@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { Task, TaskPriority, TaskStatus } from '@/types'
+import type { Task, TaskPriority, TaskStats, TaskStatus } from '@/types'
 
 export interface TaskListParams {
   page?: number
@@ -21,6 +21,11 @@ interface ListResponse {
 interface TaskResponse {
   success: true
   data: { task: Task }
+}
+
+interface TaskStatsResponse {
+  success: true
+  data: TaskStats
 }
 
 export interface CreateTaskInput {
@@ -61,4 +66,8 @@ export function updateTask(id: string, input: UpdateTaskInput) {
 
 export function deleteTask(id: string) {
   return apiRequest<{ success: true }>(`/tasks/${id}`, { method: 'DELETE' })
+}
+
+export function getTaskStats() {
+  return apiRequest<TaskStatsResponse>('/tasks/stats/summary')
 }

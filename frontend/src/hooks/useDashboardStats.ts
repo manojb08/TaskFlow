@@ -1,34 +1,18 @@
 import { useEffect, useState } from 'react'
-import { listTasks } from '@/api/tasks'
-
-export interface DashboardStats {
-  total: number
-  todo: number
-  inProgress: number
-  done: number
-}
+import { getTaskStats } from '@/api/tasks'
+import type { TaskStats } from '@/types'
 
 export function useDashboardStats() {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [stats, setStats] = useState<TaskStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     setIsLoading(true)
-    Promise.all([
-      listTasks({ limit: 1 }),
-      listTasks({ limit: 1, status: 'todo' }),
-      listTasks({ limit: 1, status: 'in_progress' }),
-      listTasks({ limit: 1, status: 'done' }),
-    ])
-      .then(([all, todo, inProgress, done]) => {
+    getTaskStats()
+      .then((res) => {
         if (cancelled) return
-        setStats({
-          total: all.meta.total,
-          todo: todo.meta.total,
-          inProgress: inProgress.meta.total,
-          done: done.meta.total,
-        })
+        setStats(res.data)
       })
       .catch(() => {
         if (!cancelled) setStats(null)

@@ -1,10 +1,12 @@
 export type UserRole = 'admin' | 'member'
+export type UserStatus = 'active' | 'invited'
 
 export interface User {
   _id: string
   name: string
   email: string
   role: UserRole
+  status: UserStatus
   createdAt: string
   updatedAt: string
 }
@@ -50,6 +52,32 @@ export interface Comment {
   body: string
   createdAt: string
   updatedAt: string
+}
+
+export type ActivityAction =
+  | 'created'
+  | 'status_changed'
+  | 'priority_changed'
+  | 'assignee_changed'
+  | 'due_date_changed'
+
+export interface ActivityEntry {
+  _id: string
+  actor: Pick<User, '_id' | 'name'>
+  action: ActivityAction
+  meta?: { from?: string | null; to?: string | null }
+  createdAt: string
+}
+
+export interface TaskStats {
+  total: number
+  todo: number
+  inProgress: number
+  done: number
+  totalTrendPct: number | null
+  completedThisWeek: number
+  dueThisWeek: number
+  assignedToMeTodoCount: number
 }
 
 export interface Paginated<T> {

@@ -18,13 +18,15 @@ import { DeleteTaskDialog } from '@/components/tasks/DeleteTaskDialog'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { CommentList } from '@/components/comments/CommentList'
 import { CommentComposer } from '@/components/comments/CommentComposer'
+import { ActivityFeed } from '@/components/tasks/ActivityFeed'
 import { useUsers } from '@/hooks/useUsers'
 import { useMyTasksCount } from '@/hooks/useMyTasksCount'
 import { useToast } from '@/components/ui/toast'
 import { getTask, updateTask } from '@/api/tasks'
 import { createComment, deleteComment, listComments } from '@/api/comments'
+import { listActivity } from '@/api/activity'
 import { ApiClientError } from '@/api/client'
-import type { Comment, Task } from '@/types'
+import type { ActivityEntry, Comment, Task } from '@/types'
 
 function toFormState(task: Task): TaskFormState {
   return {
@@ -51,6 +53,9 @@ export function TaskDetailPage() {
 
   const [comments, setComments] = useState<Comment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
+
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
+  const [activityLoading, setActivityLoading] = useState(true)
 
   const [isEditing, setIsEditing] = useState(searchParams.get('edit') === '1')
   const [form, setForm] = useState<TaskFormState | null>(null)
@@ -83,6 +88,18 @@ export function TaskDetailPage() {
       .finally(() => setCommentsLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
+
+  function loadActivity() {
+    if (!id) return
+    setActivityLoading(true)
+    listActivity(id)
+      .then((res) => setActivity(res.data.activity))
+      .catch(() => toast({ title: "Couldn't load activity", variant: 'destructive' }))
+      .finally(() => setActivityLoading(false))
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadActivity, [id])
 
   function enterEdit() {
     if (task) setForm(toFormState(task))
@@ -145,6 +162,7 @@ export function TaskDetailPage() {
       setForm(toFormState(res.data.task))
       toast({ title: 'Task updated', variant: 'success' })
       cancelEdit()
+      loadActivity()
     } catch (err) {
       toast({
         title: "Couldn't save changes",
@@ -397,6 +415,11 @@ export function TaskDetailPage() {
                 </dd>
               </div>
             </dl>
+          </div>
+
+          <div className="rounded-[10px] border border-border bg-white p-5">
+            <h2 className="mb-3 text-sm font-semibold text-ink">Activity</h2>
+            <ActivityFeed activity={activity} isLoading={activityLoading} />
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, CheckCircle2, CircleDot, Layers, ListTodo } from 'lucide-react'
+import { ArrowRight, CheckCircle2, CircleDot, Layers, ListTodo, TrendingDown, TrendingUp } from 'lucide-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { CreateTaskDialog } from '@/components/tasks/CreateTaskDialog'
 import { TaskTable } from '@/components/tasks/TaskTable'
@@ -32,11 +32,39 @@ export function DashboardPage() {
 
   const firstName = user?.name.split(' ')[0] ?? ''
 
+  const trendPct = stats?.totalTrendPct ?? null
   const cards = [
-    { label: 'Total Tasks', value: stats?.total, icon: Layers },
-    { label: 'To Do', value: stats?.todo, icon: CircleDot },
-    { label: 'In Progress', value: stats?.inProgress, icon: ListTodo },
-    { label: 'Completed', value: stats?.done, icon: CheckCircle2 },
+    {
+      label: 'Total Tasks',
+      value: stats?.total,
+      icon: Layers,
+      secondary:
+        trendPct !== null ? (
+          <span className={`flex items-center gap-1 ${trendPct >= 0 ? 'text-success' : 'text-destructive'}`}>
+            {trendPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {trendPct >= 0 ? '+' : ''}
+            {trendPct}% vs last week
+          </span>
+        ) : null,
+    },
+    {
+      label: 'To Do',
+      value: stats?.todo,
+      icon: CircleDot,
+      secondary: stats ? <span>{stats.assignedToMeTodoCount} assigned to you</span> : null,
+    },
+    {
+      label: 'In Progress',
+      value: stats?.inProgress,
+      icon: ListTodo,
+      secondary: stats ? <span>{stats.dueThisWeek} due this week</span> : null,
+    },
+    {
+      label: 'Completed',
+      value: stats?.done,
+      icon: CheckCircle2,
+      secondary: stats ? <span>+{stats.completedThisWeek} this week</span> : null,
+    },
   ]
 
   return (
@@ -61,7 +89,10 @@ export function DashboardPage() {
             {statsLoading ? (
               <Skeleton className="mt-2 h-8 w-12" />
             ) : (
-              <p className="mt-1 font-heading text-3xl font-bold text-ink">{card.value ?? '—'}</p>
+              <>
+                <p className="mt-1 font-heading text-3xl font-bold text-ink">{card.value ?? '—'}</p>
+                <p className="mt-1 text-xs text-ink/50">{card.secondary}</p>
+              </>
             )}
           </div>
         ))}
