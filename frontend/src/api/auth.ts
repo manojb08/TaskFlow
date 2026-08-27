@@ -28,3 +28,17 @@ export function logout() {
 export function me() {
   return apiRequest<{ success: true; data: { user: User } }>('/auth/me')
 }
+
+export function forgotPassword(email: string) {
+  return apiRequest<{
+    success: true
+    data: { message: string; resetToken?: string; resetUrl?: string }
+  }>('/auth/forgot-password', { method: 'POST', body: { email } })
+}
+
+export function setPassword(token: string, password: string) {
+  return apiRequest<{ success: true; data: { message: string } }>('/auth/set-password', {
+    method: 'POST',
+    body: { token, password },
+  })
+}

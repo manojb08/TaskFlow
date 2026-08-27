@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -5,12 +6,38 @@ import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { useAuth } from '@/context/AuthContext'
 import { useMyTasksCount } from '@/hooks/useMyTasksCount'
+import { useToast } from '@/components/ui/toast'
+import { updateMe } from '@/api/users'
+import { ApiClientError } from '@/api/client'
 
 export function SettingsPage() {
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const myTasksCount = useMyTasksCount()
+  const { toast } = useToast()
+
+  const [name, setName] = useState(user?.name ?? '')
+  const [saving, setSaving] = useState(false)
 
   if (!user) return null
+
+  const dirty = name.trim() !== user.name && name.trim().length > 0
+
+  async function onSave() {
+    setSaving(true)
+    try {
+      await updateMe({ name: name.trim() })
+      await refreshUser()
+      toast({ title: 'Profile updated', variant: 'success' })
+    } catch (err) {
+      toast({
+        title: "Couldn't update profile",
+        description: err instanceof ApiClientError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <AppShell breadcrumb="Settings" myTasksCount={myTasksCount}>
@@ -28,8 +55,8 @@ export function SettingsPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <Label>Full name</Label>
-            <Input value={user.name} disabled />
+            <Label htmlFor="settings-name">Full name</Label>
+            <Input id="settings-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Email</Label>
@@ -42,12 +69,18 @@ export function SettingsPage() {
         </div>
 
         <p className="mt-4 text-xs text-ink/40">
-          Profile editing isn&apos;t implemented in this build — see AI_USAGE.md / DECISIONS.md for scope notes.
+          Email and role aren&apos;t editable from here — email is your login identity, and role is managed by an
+          admin.
         </p>
 
-        <Button variant="destructive" className="mt-6" onClick={() => logout()}>
-          Log out
-        </Button>
+        <div className="mt-6 flex items-center justify-between">
+          <Button onClick={onSave} disabled={!dirty || saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </Button>
+          <Button variant="destructive" onClick={() => logout()}>
+            Log out
+          </Button>
+        </div>
       </div>
     </AppShell>
   )

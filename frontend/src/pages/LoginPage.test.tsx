@@ -42,7 +42,15 @@ describe('LoginPage', () => {
     vi.mocked(authApi.login).mockResolvedValue({
       success: true,
       data: {
-        user: { _id: '1', name: 'Alex Morgan', email: 'alex@taskflow.io', role: 'admin', createdAt: '', updatedAt: '' },
+        user: {
+          _id: '1',
+          name: 'Alex Morgan',
+          email: 'alex@taskflow.io',
+          role: 'admin',
+          status: 'active',
+          createdAt: '',
+          updatedAt: '',
+        },
         accessToken: 'token',
       },
     })

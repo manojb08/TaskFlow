@@ -5,13 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/context/AuthContext'
-import { useToast } from '@/components/ui/toast'
 import { ApiClientError } from '@/api/client'
 
 export function LoginPage() {
   const { user, isLoading, login } = useAuth()
   const navigate = useNavigate()
-  const { toast } = useToast()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -66,13 +64,9 @@ export function LoginPage() {
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">Password</Label>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-accent hover:underline"
-                  onClick={() => toast({ title: 'Not available in this demo', variant: 'default' })}
-                >
+                <Link to="/forgot-password" className="text-xs font-medium text-accent hover:underline">
                   Forgot password?
-                </button>
+                </Link>
               </div>
               <div className="relative">
                 <Input
