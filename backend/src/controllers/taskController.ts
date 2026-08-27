@@ -6,6 +6,7 @@ import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { logActivity } from '../utils/logActivity';
 import { AuthenticatedRequest } from '../middleware/requireAuth';
+import { broadcast } from '../realtime/io';
 
 export const listTasks = asyncHandler(async (req: AuthenticatedRequest, res) => {
   const { page, limit, search, status, priority, assignee, sortBy, sortOrder } = req.query as unknown as {
@@ -52,6 +53,7 @@ export const createTask = asyncHandler(async (req: AuthenticatedRequest, res) =>
     { path: 'assignee', select: 'name email' },
     { path: 'creator', select: 'name email' },
   ]);
+  broadcast('task:created', { taskId: task._id });
   res.status(201).json({ success: true, data: { task: populated } });
 });
 
@@ -134,6 +136,7 @@ export const updateTask = asyncHandler(async (req: AuthenticatedRequest, res) =>
     }
   }
 
+  broadcast('task:updated', { taskId: task._id });
   res.json({ success: true, data: { task } });
 });
 
@@ -143,6 +146,7 @@ export const deleteTask = asyncHandler(async (req, res) => {
     throw ApiError.notFound('Task not found');
   }
   await Comment.deleteMany({ task: task._id });
+  broadcast('task:deleted', { taskId: task._id });
   res.json({ success: true, data: { deleted: true } });
 });
 

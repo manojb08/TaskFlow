@@ -3,6 +3,7 @@ import { Task } from '../models/Task';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { AuthenticatedRequest } from '../middleware/requireAuth';
+import { broadcast } from '../realtime/io';
 
 export const listComments = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -35,6 +36,7 @@ export const createComment = asyncHandler(async (req: AuthenticatedRequest, res)
 
   const comment = await Comment.create({ task: id, author: req.user!.id, body: req.body.body });
   const populated = await comment.populate('author', 'name email');
+  broadcast('comment:created', { taskId: id, commentId: comment._id });
   res.status(201).json({ success: true, data: { comment: populated } });
 });
 
@@ -52,5 +54,6 @@ export const deleteComment = asyncHandler(async (req: AuthenticatedRequest, res)
   }
 
   await comment.deleteOne();
+  broadcast('comment:deleted', { taskId: comment.task, commentId: comment._id });
   res.json({ success: true, data: { deleted: true } });
 });
