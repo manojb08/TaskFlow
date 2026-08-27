@@ -99,6 +99,7 @@ Two independent apps talking over a versioned REST API (`/api/v1`) — no server
 - **Comments**: a separate collection referencing a task, so a task document doesn't grow unbounded and comments can be paginated independently. Deleting a task cascades to its comments.
 - **Activity log**: task creation and edits to status/priority/assignee/due-date are recorded and shown in the task detail view's Activity panel.
 - **Invite / forgot-password**: share one token mechanism (a hashed, time-limited token that lets someone set a password). There's no email service wired up, so both flows return the link directly in the API response for the demo to be usable — see [DECISIONS.md](./DECISIONS.md#round-2--features-added-beyond-5-requirements).
+- **Real-time**: a Socket.io layer sits alongside the REST API — mutations still go through the normal validated REST endpoints, and the server just broadcasts a lightweight "this changed, refetch it" event afterward. Open the app in two browser sessions and edit a task in one; the other updates without a manual refresh. Purely additive — the app works identically (via normal refetch) if the socket never connects.
 
 ## API overview
 
@@ -133,7 +134,7 @@ Responses use a consistent envelope: `{ success, data, meta? }` or `{ success: f
 
 Documented as deliberate scope decisions in [DECISIONS.md](./DECISIONS.md) — the short version:
 
-- **No real-time updates or notification delivery.** Comments/tasks update on refetch, not via websockets; the notification bell and @mentions don't push anything — reasonable for a small team tool, and out of scope for what the assessment asked for.
+- **No notification delivery.** Tasks/comments now sync live across open tabs/sessions via Socket.io (see below), but there's no persisted, per-user notification feed — the bell icon and @mentions don't push anything yet.
 - **Role model is minimal.** Any authenticated user can edit/assign/delete any task (matches "small trusted team"); comment deletion is restricted to the author or an admin; inviting new members is admin-only.
 - **No real email delivery.** Invite and password-reset links are returned directly by the API (shown on-screen) rather than emailed, since there's no email service configured — clearly labeled as dev-only in the UI.
 - **Settings only supports editing your name.** Email (login identity) and role (admin-controlled) aren't self-service.

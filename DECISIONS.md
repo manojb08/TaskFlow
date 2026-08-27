@@ -85,6 +85,17 @@ After the core assessment (§5, fully covered above and tested) was complete, th
 **Mobile navigation now uses a real slide-out Sheet; mobile task lists now render as cards.** Both were originally simplified (a centered dialog, a horizontally-scrolling table) to prioritize getting every §5 requirement working first. Built properly in this round: a Sheet primitive (Radix Dialog content repositioned to a left-edge slide-in panel) for navigation, and a card-per-task layout (title, badges, assignee, updated-at) shown below the `md` breakpoint alongside the existing table.
 
 **Still not built — deliberately.**
-- **Real-time updates / websockets.** No functional requirement drives this for a small-team tool; the app relies on refetch after mutations and on navigation. Building a websocket layer for an assessment app with no multi-user-concurrent-viewing requirement would be scope for its own sake.
-- **Notification delivery** (the bell icon, mention notifications). Would sit on top of real-time updates or a polling/email layer — same reasoning as above.
+- **Notification delivery** (the bell icon, mention notifications). Would need its own data model (persisted, per-user, read/unread) on top of the real-time transport that now exists — the transport isn't the missing piece anymore, the notification *feature* itself (what counts as notifiable, read state, a UI for it) is a separate scope decision not asked for in the brief.
+
+## Round 3 — real-time updates (Socket.io)
+
+Added after Round 2, on request: a Socket.io layer on top of the existing REST API (additive, not a replacement — every mutation still goes through the same validated REST endpoints; sockets only carry a "something changed, go refetch" signal).
+
+**Broadcast, not per-user targeting.** Every connected authenticated client receives every event (`task:created`, `task:updated`, `task:deleted`, `comment:created`, `comment:deleted`). No Socket.io rooms or per-user filtering. Consistent with the existing authorization model (any authenticated user can already see any task via the REST API), so scoping broadcasts wouldn't hide anything a client couldn't already fetch — it would only add complexity.
+
+**Payloads are IDs only, not the changed data.** An event carries just `{ taskId }` or `{ taskId, commentId }`; the client reacts by refetching via the normal REST call, not by trusting broadcast data as a source of truth. This means the socket layer can never itself serve stale or unauthorized data — the existing auth/validation on every REST endpoint still applies to the refetch that follows.
+
+**Socket auth reuses the existing JWT**, sent via the connection handshake (`socket.handshake.auth.token`) and verified with the same `verifyAccessToken` the REST middleware uses — no separate socket-specific auth system.
+
+**Graceful degradation is structural, not a special case.** Every part of the app that now updates live also still works exactly as before if the socket never connects or drops (manual navigation/refetch), because the socket layer only ever *triggers* the same fetch functions that already ran on mount — it doesn't introduce a second code path.
 - **Settings beyond name.** Email and role are intentionally not user-editable from Settings (email is the login identity; role is an admin-controlled permission, not a self-service preference).

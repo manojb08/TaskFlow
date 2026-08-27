@@ -22,8 +22,8 @@ This document describes the system design for the assessment: a multi-user task 
 ```
 
 - **Monorepo layout**: `backend/` and `frontend/` as independent npm projects, each with their own `package.json`, so they can be developed, tested, and deployed independently.
-- **Communication**: Frontend talks to the backend exclusively over a versioned REST API (`/api/v1/...`). No server-side rendering / no shared runtime — a clean client/server boundary keeps the assessment's two hardest concerns (auth, data modeling) testable in isolation.
-- **Auth model**: Stateless JWT access tokens (short-lived) + httpOnly refresh token cookie (rotation). Chosen over server sessions because it needs no session store and keeps the API stateless/horizontally scalable — reasonable for a small internal tool without over-engineering.
+- **Communication**: Frontend talks to the backend over a versioned REST API (`/api/v1/...`) for every read and write — that's still the single source of truth. A Socket.io connection sits alongside it purely as a "something changed, go refetch" signal (see §3.1) — it never carries data the client trusts directly. No server-side rendering / no shared runtime — a clean client/server boundary keeps the assessment's two hardest concerns (auth, data modeling) testable in isolation.
+- **Auth model**: Stateless JWT access tokens (short-lived) + httpOnly refresh token cookie (rotation). Chosen over server sessions because it needs no session store and keeps the API stateless/horizontally scalable — reasonable for a small internal tool without over-engineering. The same access token authenticates the Socket.io handshake.
 
 ---
 
@@ -129,6 +129,18 @@ All responses use a consistent envelope:
 | DELETE | `/comments/:id` | Bearer | Delete own comment (author or admin only) |
 
 **Authorization rule** (documented assumption — see DECISIONS.md): any authenticated user can view/edit/assign any task (small trusted team, matches "internal tool used by a small engineering team"). Delete of a *comment* is restricted to its author or an admin. Delete of a *task* is unrestricted among authenticated users, matching the design's per-row "Delete task" action being available to any team member. Inviting a new member is the one admin-only write endpoint — reading the roster (`GET /users`) is not restricted (see DECISIONS.md for why).
+
+### 3.1 Real-time events (Socket.io, additive to the REST API above)
+
+The client connects with `io(url, { auth: { token: <access token> } })`; the server verifies that token the same way `requireAuth` does before accepting the connection. Every authenticated client receives every event below (no rooms/per-user targeting — see DECISIONS.md Round 3). Payloads are IDs only; the client always refetches the actual data via the REST endpoints above rather than trusting broadcast data.
+
+| Event | Payload | Emitted when |
+|---|---|---|
+| `task:created` | `{ taskId }` | after `POST /tasks` succeeds |
+| `task:updated` | `{ taskId }` | after `PATCH /tasks/:id` succeeds |
+| `task:deleted` | `{ taskId }` | after `DELETE /tasks/:id` succeeds |
+| `comment:created` | `{ taskId, commentId }` | after `POST /tasks/:id/comments` succeeds |
+| `comment:deleted` | `{ taskId, commentId }` | after `DELETE /comments/:id` succeeds |
 
 ---
 
