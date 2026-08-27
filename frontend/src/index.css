@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    font-family: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  }
+  body {
+    @apply bg-canvas text-ink antialiased;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-fast {
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+}
