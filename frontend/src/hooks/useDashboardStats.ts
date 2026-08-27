@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { getTaskStats } from '@/api/tasks'
+import { subscribe } from '@/lib/socket'
 import type { TaskStats } from '@/types'
 
 export function useDashboardStats() {
   const [stats, setStats] = useState<TaskStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -23,6 +25,12 @@ export function useDashboardStats() {
     return () => {
       cancelled = true
     }
+  }, [reloadToken])
+
+  useEffect(() => {
+    const bump = () => setReloadToken((t) => t + 1)
+    const unsubs = [subscribe('task:created', bump), subscribe('task:updated', bump), subscribe('task:deleted', bump)]
+    return () => unsubs.forEach((unsub) => unsub())
   }, [])
 
   return { stats, isLoading }

@@ -26,6 +26,7 @@ import { getTask, updateTask } from '@/api/tasks'
 import { createComment, deleteComment, listComments } from '@/api/comments'
 import { listActivity } from '@/api/activity'
 import { ApiClientError } from '@/api/client'
+import { subscribe } from '@/lib/socket'
 import type { ActivityEntry, Comment, Task } from '@/types'
 
 function toFormState(task: Task): TaskFormState {
@@ -79,15 +80,17 @@ export function TaskDetailPage() {
 
   useEffect(loadTask, [id])
 
-  useEffect(() => {
+  function loadComments() {
     if (!id) return
     setCommentsLoading(true)
     listComments(id)
       .then((res) => setComments(res.data.comments))
       .catch(() => toast({ title: "Couldn't load comments", variant: 'destructive' }))
       .finally(() => setCommentsLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadComments, [id])
 
   function loadActivity() {
     if (!id) return
@@ -100,6 +103,29 @@ export function TaskDetailPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(loadActivity, [id])
+
+  useEffect(() => {
+    if (!id) return
+    const unsubs = [
+      subscribe<{ taskId: string }>('task:updated', ({ taskId }) => {
+        if (taskId === id) {
+          loadTask()
+          loadActivity()
+        }
+      }),
+      subscribe<{ taskId: string }>('task:deleted', ({ taskId }) => {
+        if (taskId === id) loadTask()
+      }),
+      subscribe<{ taskId: string }>('comment:created', ({ taskId }) => {
+        if (taskId === id) loadComments()
+      }),
+      subscribe<{ taskId: string }>('comment:deleted', ({ taskId }) => {
+        if (taskId === id) loadComments()
+      }),
+    ]
+    return () => unsubs.forEach((unsub) => unsub())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   function enterEdit() {
     if (task) setForm(toFormState(task))

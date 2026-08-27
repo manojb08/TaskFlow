@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import * as authApi from '@/api/auth'
 import { ApiClientError, getAccessToken, registerRefreshHandler, setAccessToken } from '@/api/client'
+import { connectSocket, disconnectSocket } from '@/lib/socket'
 import type { User } from '@/types'
 
 interface AuthContextValue {
@@ -52,6 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     bootstrap()
   }, [])
+
+  useEffect(() => {
+    if (!user) return
+    connectSocket()
+    return () => disconnectSocket()
+  }, [user])
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login({ email, password })

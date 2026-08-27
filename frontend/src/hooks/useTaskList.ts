@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { listTasks, type TaskListParams } from '@/api/tasks'
 import { ApiClientError } from '@/api/client'
+import { subscribe } from '@/lib/socket'
 import type { Task } from '@/types'
 
 interface UseTaskListResult {
@@ -41,6 +42,15 @@ export function useTaskList(params: TaskListParams): UseTaskListResult {
   }, [fetchTasks])
 
   const refetch = useCallback(() => setReloadToken((t) => t + 1), [])
+
+  useEffect(() => {
+    const unsubs = [
+      subscribe('task:created', refetch),
+      subscribe('task:updated', refetch),
+      subscribe('task:deleted', refetch),
+    ]
+    return () => unsubs.forEach((unsub) => unsub())
+  }, [refetch])
 
   return { tasks, isLoading, error, meta, refetch, setTasks }
 }
