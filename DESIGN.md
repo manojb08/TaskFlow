@@ -37,6 +37,9 @@ This document describes the system design for the assessment: a multi-user task 
 | `email` | String | required, unique, lowercase, indexed |
 | `passwordHash` | String | bcrypt hash, **never returned** in API responses |
 | `role` | enum `admin` \| `member` | default `member` (kept minimal — full RBAC is out of scope) |
+| `status` | enum `active` \| `invited` | default `active`; `invited` until the person accepts via a credential token |
+| `tokenVersion` | Number | incremented on logout / password change to invalidate outstanding refresh tokens; never returned |
+| `credentialTokenHash` / `credentialTokenExpires` / `credentialTokenPurpose` | String / Date / enum `invite`\|`reset` | set when an invite or password-reset link is issued; only the **hash** of the token is stored, never returned |
 | `createdAt` / `updatedAt` | Date | timestamps |
 
 ### Task
@@ -65,7 +68,17 @@ Modeled as a **separate collection** (not embedded) referencing the task, so a t
 | `body` | String | required, 1–2000 chars |
 | `createdAt` / `updatedAt` | Date | timestamps |
 
-*(Activity/audit log shown in the design's "Activity" panel — e.g. "Sarah moved this to In Progress" — is a nice-to-have, out of scope for the 6–10hr budget; see DECISIONS.md. If time remains it's implemented as a lightweight `ActivityLog` collection written on every task mutation.)*
+### ActivityLog
+Written on task creation and on any actual change to status/priority/assignee/dueDate during an edit (no-op edits write nothing). Powers the task detail view's read-only "Activity" panel.
+
+| Field | Type | Notes |
+|---|---|---|
+| `_id` | ObjectId | |
+| `task` | ObjectId ref `Task` | required, indexed |
+| `actor` | ObjectId ref `User` | who made the change |
+| `action` | enum `created` \| `status_changed` \| `priority_changed` \| `assignee_changed` \| `due_date_changed` | |
+| `meta` | `{ from, to }` | human-readable old/new values (e.g. assignee resolved to a name, not an id) |
+| `createdAt` | Date | timestamps |
 
 ---
 
@@ -85,22 +98,28 @@ All responses use a consistent envelope:
 | POST | `/auth/register` | — | Create user, returns access token + sets refresh cookie |
 | POST | `/auth/login` | — | Validate credentials, returns access token + sets refresh cookie |
 | POST | `/auth/refresh` | refresh cookie | Issues new access token |
-| POST | `/auth/logout` | — | Clears refresh cookie |
+| POST | `/auth/logout` | — | Clears refresh cookie, invalidates the refresh token server-side |
 | GET | `/auth/me` | Bearer | Current user profile |
+| POST | `/auth/forgot-password` | — (rate-limited) | Always returns a generic success message; issues a 1hr reset token when the email matches (returned directly outside production — no email service) |
+| POST | `/auth/set-password` | — (rate-limited) | Consumes an invite or reset token atomically, sets the new password, activates the account |
 
-### Users (minimal — needed for assignee pickers)
+### Users
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/users` | Bearer | List users (id, name, email) for assignee dropdowns |
+| GET | `/users` | Bearer | List users (id, name, email, role, status) — assignee pickers, Team page |
+| POST | `/users` | Bearer + admin | Invite a member: creates a `status:'invited'` user, returns a one-time invite link |
+| PATCH | `/users/me` | Bearer | Update your own name |
 
 ### Tasks
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/tasks` | Bearer | List, paginated. Query: `page, limit, search, status, priority, assignee, sortBy, sortOrder` |
 | POST | `/tasks` | Bearer | Create task (creator = current user) |
+| GET | `/tasks/stats/summary` | Bearer | Dashboard metrics (counts, week-over-week trend, due-this-week, assigned-to-me) — registered before `/tasks/:id` so it isn't captured as an id |
 | GET | `/tasks/:id` | Bearer | Task detail |
-| PATCH | `/tasks/:id` | Bearer | Partial update (title/description/status/priority/assignee/dueDate) |
+| PATCH | `/tasks/:id` | Bearer | Partial update (title/description/status/priority/assignee/dueDate); logs an ActivityLog entry per changed field |
 | DELETE | `/tasks/:id` | Bearer | Delete task (cascades: deletes its comments) |
+| GET | `/tasks/:id/activity` | Bearer | Task's activity trail, newest first |
 
 ### Comments
 | Method | Path | Auth | Description |
@@ -109,7 +128,7 @@ All responses use a consistent envelope:
 | POST | `/tasks/:id/comments` | Bearer | Add comment (author = current user) |
 | DELETE | `/comments/:id` | Bearer | Delete own comment (author or admin only) |
 
-**Authorization rule** (documented assumption — see DECISIONS.md): any authenticated user can view/edit/assign any task (small trusted team, matches "internal tool used by a small engineering team"). Delete of a *comment* is restricted to its author or an admin. Delete of a *task* is unrestricted among authenticated users, matching the design's per-row "Delete task" action being available to any team member.
+**Authorization rule** (documented assumption — see DECISIONS.md): any authenticated user can view/edit/assign any task (small trusted team, matches "internal tool used by a small engineering team"). Delete of a *comment* is restricted to its author or an admin. Delete of a *task* is unrestricted among authenticated users, matching the design's per-row "Delete task" action being available to any team member. Inviting a new member is the one admin-only write endpoint — reading the roster (`GET /users`) is not restricted (see DECISIONS.md for why).
 
 ---
 
@@ -137,15 +156,15 @@ Reproduced 1:1 from the reference artifact's "Foundations" frame — treated as 
 **Priorities**: Low, Medium (gray dots), High (amber dot), Urgent (red dot).
 
 **Screens reproduced** (desktop 1440×900 + mobile 390×844, from the reference):
-1. Login (+ Register)
-2. Dashboard — stat cards + recent tasks table
+1. Login (+ Register), Forgot password, Set password (shared by accept-invite and reset-password)
+2. Dashboard — stat cards (with real week-over-week trend + derived metrics) + recent tasks table
 3. Tasks list — search, Status/Priority/Assignee filters, sort, paginated table, row actions
-4. Task Detail — description, comments thread + composer, right rail (task info + activity feed)
+4. Task Detail — description, comments thread + composer (with @mention autocomplete), right rail (task info + activity feed)
 5. Edit Task — inline edit with unsaved-changes summary + danger zone (delete)
-6. Team — member roster (used for the assignee list)
-7. Settings — profile (kept minimal / stretch)
+6. Team — member roster with Active/Invited status, admin-gated Invite Member dialog
+7. Settings — profile (name editing; email/role intentionally read-only)
 8. States — loading (skeleton), empty ("No tasks found"), error (toast + destructive confirm dialog)
-9. Responsive — sidebar collapses to a slide-out sheet, table rows become cards, filters collapse into a "Filters (n)" trigger, create task becomes a full-screen sheet.
+9. Responsive — sidebar collapses to a real slide-out Sheet, task list rows become cards below the `md` breakpoint, create task remains a Dialog on all sizes (see DECISIONS.md).
 
 Components are built as reusable primitives (Button, Input, Select, Badge, Table, Dialog, Sheet, Avatar, Toast) via **ShadCN/UI** on top of Tailwind, matching the tokens above, so every screen composes the same primitives rather than one-off styles.
 
@@ -155,14 +174,14 @@ Components are built as reusable primitives (Button, Input, Select, Badge, Table
 
 ```
 frontend/src/
-  api/            # typed fetch client, one module per resource (auth, tasks, comments, users)
+  api/            # typed fetch client, one module per resource (auth, tasks, comments, users, activity)
   components/
-    ui/           # shadcn primitives (button, input, badge, dialog, ...)
+    ui/           # shadcn primitives (button, input, badge, dialog, sheet, ...)
     layout/       # Sidebar, Topbar, AppShell
-    tasks/        # TaskTable, TaskFilters, TaskCard, StatusBadge, PriorityBadge
-    comments/     # CommentList, CommentComposer
-  pages/          # Login, Register, Dashboard, TaskList, TaskDetail, TaskEdit, Team
-  hooks/          # useAuth, useTasks, useDebouncedValue
+    tasks/        # TaskTable (table + mobile cards), TaskFilters, ActivityFeed, StatusBadge, PriorityBadge
+    comments/     # CommentList, CommentComposer (mention autocomplete)
+  pages/          # Login, Register, ForgotPassword, SetPassword, Dashboard, Tasks, TaskDetail, Team, Settings
+  hooks/          # useTaskList, useDashboardStats, useDebouncedValue, useMyTasksCount, useUsers
   context/        # AuthContext
   types/          # shared TS types mirroring the API contract
   lib/            # utils (cn, date formatting)
@@ -173,17 +192,17 @@ frontend/src/
 ```
 backend/src/
   config/         # env, db connection
-  models/         # User, Task, Comment (Mongoose schemas)
-  controllers/    # authController, taskController, commentController, userController
+  models/         # User, Task, Comment, ActivityLog (Mongoose schemas)
+  controllers/    # authController, taskController, commentController, userController, activityController
   routes/         # one router per resource, mounted under /api/v1
-  middleware/     # requireAuth, errorHandler, validateRequest (zod), rateLimiter
+  middleware/     # requireAuth, requireRole, errorHandler, validateRequest (zod), rateLimiter
   validators/     # zod schemas per endpoint
-  utils/          # jwt, password hashing, ApiError, asyncHandler
+  utils/          # jwt, logActivity, ApiError, asyncHandler
   app.ts          # express app (middleware wiring)
   server.ts       # http server bootstrap + db connect
 tests/
-  unit/           # model/util tests
   integration/    # supertest against routes, mongodb-memory-server
+  utils/          # shared test fixtures (auth helpers)
 ```
 
 ---
@@ -192,8 +211,11 @@ tests/
 
 - Passwords hashed with **bcrypt** (cost 12), never stored/returned in plaintext.
 - JWT access token (15 min) in `Authorization: Bearer`, refresh token (7 days) in **httpOnly, sameSite=strict** cookie — mitigates XSS token theft on the access token's short window and keeps the refresh token off `localStorage`.
-- `requireAuth` middleware rejects any protected route without a valid access token (`401`).
+- `requireAuth` middleware rejects any protected route without a valid access token (`401`); `requireRole` additionally gates admin-only routes (invite member).
+- Invite/reset credential tokens: 32 random bytes, only the **sha256 hash** is ever persisted, expiry enforced server-side (`credentialTokenExpires`), consumed **atomically** via a single `findOneAndUpdate` so a token can't be double-spent by two racing requests, and a successful password set bumps `tokenVersion` to invalidate any outstanding refresh tokens.
+- `forgot-password` performs the identical database operation regardless of whether the email matches, so response timing can't be used to enumerate registered accounts.
 - Input validation on every mutating endpoint via **zod**, server-side (client-side validation mirrors it for UX but is never trusted).
-- Rate limiting on `/auth/*` (login/register) to blunt brute force.
+- Rate limiting on all `/auth/*` endpoints (login/register/forgot-password/set-password) to blunt brute force.
 - Mongoose schema-level constraints + `helmet` + CORS locked to the frontend origin.
 - No secrets committed — `.env.example` documents required vars, real `.env` is gitignored.
+- The credential-token flow was adversarially reviewed after implementation (prompted to specifically look for token leakage, enumeration, expiry bypass, and authorization gaps); the timing-enumeration issue and the token race condition above were both found and fixed as a result — see AI_USAGE.md.

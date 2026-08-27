@@ -58,3 +58,7 @@ Per the brief's §7: assumption → implement consistently → document. Concret
 - `docker compose up` (or documented Atlas connection string) + `npm run dev` in both `backend/` and `frontend/` gets a reviewer to a working login screen in under 5 minutes.
 - Every §5 requirement has a working, clickable path in the UI backed by a real API call (no mocked data in the shipped app).
 - `README.md`, `DECISIONS.md`, `AI_USAGE.md` are accurate to what's actually in the repo, not aspirational.
+
+## 7. Addendum: work beyond §5
+
+Sections 3–4 above describe the plan for the core assessment (§5), which was completed, tested, and submitted on that basis. Afterward, several items from §4's "deferred" list — the activity log, invite/forgot-password flows, dashboard metrics, comment mentions, and the remaining responsive-design gaps — were built at the user's request, going beyond what the brief requires. That work, and the reasoning behind it, is documented in `DECISIONS.md` under "Round 2" rather than rewritten into this section, so this document stays an accurate record of the original §5-scoped plan.

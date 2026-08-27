@@ -49,12 +49,12 @@ npm run seed             # creates 2 demo users + 1 sample task
 npm run dev               # http://localhost:4000
 ```
 
-Seeded accounts (for testing task assignment between two users):
+Seeded accounts (for testing task assignment, and admin-only features like inviting members):
 
-| Email | Password |
-|---|---|
-| `alex@taskflow.io` | `password123` |
-| `sarah@taskflow.io` | `password123` |
+| Email | Password | Role |
+|---|---|---|
+| `alex@taskflow.io` | `password123` | admin |
+| `sarah@taskflow.io` | `password123` | member |
 
 ### 3. Frontend
 
@@ -70,8 +70,8 @@ Open `http://localhost:5173`, log in with either seeded account.
 ### Running tests
 
 ```bash
-cd backend && npm test      # 18 integration tests (auth, tasks, comments) against an in-memory MongoDB
-cd frontend && npm test      # component/unit tests
+cd backend && npm test      # 42 integration tests against an in-memory MongoDB
+cd frontend && npm test      # 20 component/unit tests
 ```
 
 ## Environment variables
@@ -97,6 +97,8 @@ Two independent apps talking over a versioned REST API (`/api/v1`) — no server
 - **Auth**: register/login issue a short-lived JWT access token (returned in the response body, held in memory on the client) plus a long-lived refresh token in an httpOnly cookie. The frontend's API client automatically retries a request once after a silent refresh if it gets a `401`.
 - **Tasks**: standard CRUD, with server-side pagination, text search (title + description), and filtering by status/priority/assignee.
 - **Comments**: a separate collection referencing a task, so a task document doesn't grow unbounded and comments can be paginated independently. Deleting a task cascades to its comments.
+- **Activity log**: task creation and edits to status/priority/assignee/due-date are recorded and shown in the task detail view's Activity panel.
+- **Invite / forgot-password**: share one token mechanism (a hashed, time-limited token that lets someone set a password). There's no email service wired up, so both flows return the link directly in the API response for the demo to be usable — see [DECISIONS.md](./DECISIONS.md#round-2--features-added-beyond-5-requirements).
 
 ## API overview
 
@@ -105,11 +107,15 @@ All endpoints are under `/api/v1`. Full contract in [DESIGN.md §3](./DESIGN.md#
 ```
 POST   /auth/register          POST   /auth/login          POST /auth/refresh
 POST   /auth/logout            GET    /auth/me
+POST   /auth/forgot-password   POST   /auth/set-password    (shared by invite-accept and reset)
 
-GET    /users                  (id/name/email — for assignee pickers)
+GET    /users                  (id/name/email/role/status — for assignee pickers, Team page)
+POST   /users                  admin only — invites a member, returns a one-time invite link
+PATCH  /users/me                update your own name
 
 GET    /tasks                  ?page&limit&search&status&priority&assignee&sortBy&sortOrder
 POST   /tasks
+GET    /tasks/stats/summary     dashboard metrics
 GET    /tasks/:id
 PATCH  /tasks/:id
 DELETE /tasks/:id
@@ -117,6 +123,8 @@ DELETE /tasks/:id
 GET    /tasks/:id/comments
 POST   /tasks/:id/comments
 DELETE /comments/:commentId
+
+GET    /tasks/:id/activity
 ```
 
 Responses use a consistent envelope: `{ success, data, meta? }` or `{ success: false, error: { code, message, details? } }`.
@@ -125,11 +133,10 @@ Responses use a consistent envelope: `{ success, data, meta? }` or `{ success: f
 
 Documented as deliberate scope decisions in [DECISIONS.md](./DECISIONS.md) — the short version:
 
-- **No activity/audit log.** The reference design's right-rail "Activity" feed (e.g. "Sarah moved this to In Progress") isn't implemented — it wasn't in the assessment's core requirements (§5) and didn't fit the time budget alongside the required features.
-- **No real-time updates.** Comments/tasks update on refetch, not via websockets — reasonable for a small team tool.
-- **Role model is minimal.** Any authenticated user can edit/assign/delete any task (matches "small trusted team"); comment deletion is restricted to the author or an admin.
-- **Settings, Team → Invite Member, "Forgot password," and @mentions are visual-only.** They render (to match the reference design) but aren't wired to real functionality — none were in §5's requirements.
-- **Mobile nav uses a centered dialog, not a slide-out sheet**, and mobile task tables scroll horizontally rather than reflowing into cards — a scope simplification, not a missing Radix primitive.
+- **No real-time updates or notification delivery.** Comments/tasks update on refetch, not via websockets; the notification bell and @mentions don't push anything — reasonable for a small team tool, and out of scope for what the assessment asked for.
+- **Role model is minimal.** Any authenticated user can edit/assign/delete any task (matches "small trusted team"); comment deletion is restricted to the author or an admin; inviting new members is admin-only.
+- **No real email delivery.** Invite and password-reset links are returned directly by the API (shown on-screen) rather than emailed, since there's no email service configured — clearly labeled as dev-only in the UI.
+- **Settings only supports editing your name.** Email (login identity) and role (admin-controlled) aren't self-service.
 - **No file attachments, sub-tasks, or kanban/drag-and-drop.**
 
 ## AI usage

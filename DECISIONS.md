@@ -19,8 +19,11 @@ Technical decisions, assumptions, alternatives considered, and tradeoffs made wh
 - Why not: the reference design's task list shows a delete action on every row regardless of who created it, and building real RBAC wasn't asked for in §5. Documented here rather than silently generalized.
 - Where I *did* restrict: comment deletion is author-or-admin only, because comments are personal statements ("Sarah said X") in a way task fields aren't, and it was a small addition once `role` existed on the user model.
 
-**Registration is open (no invite-only / admin-approval flow).**
-- The brief just needs "at least two users" to demonstrate assignment. An invite flow is out of scope; anyone can self-register, which is fine for a demo/assessment build and is called out as a real limitation for a production version.
+**Registration is open, and there's also an admin-gated invite flow.**
+- The brief only needs "at least two users" to demonstrate assignment, so open self-registration alone would have satisfied §5. An admin "Invite Member" path was added afterward (see "Round 2" below) as a more realistic onboarding story for an internal tool — but self-registration was kept rather than removed, since closing it would need an explicit product decision ("is this tool invite-only?") the brief never makes.
+
+**`GET /users` is open to any authenticated user, not admin-restricted.**
+- Reviewed explicitly (an adversarial security pass flagged the asymmetry with the admin-gated invite endpoint and asked me to confirm intent rather than assume it). Decision: keep it open. It's a read-only roster (name/email/role/status) used by every member for assignee pickers, the Team page, and comment mentions — restricting it to admins would break those features for regular members, which contradicts "small trusted team" being able to see who's on it. The asymmetry with `POST /users` (admin-only) is intentional: reading the roster is low-risk, creating accounts isn't.
 
 ## Data model
 
@@ -58,26 +61,30 @@ Technical decisions, assumptions, alternatives considered, and tradeoffs made wh
 - The reference design shows "Edit task" as a visually distinct screen. Implementing it as a toggled state on the same component (same data already loaded, same route) is functionally identical for the user and avoids duplicating the fetch-task-by-id logic and layout across two page components.
 
 **Create Task is a centered Dialog on both desktop and mobile, not a full-screen Sheet on mobile.**
-- The reference only shows a desktop create flow implicitly (via the "Create Task" button) and an explicit **mobile** full-screen-sheet frame. Building a real Sheet primitive (slide-in from an edge, separate from Dialog) for one screen size was judged not worth the added component surface for this scope — the Dialog is still fully usable at 390px width. If this shipped past a takehome, Radix's `Dialog` can be swapped for a proper `Sheet` on mobile without touching the form logic.
+- The reference only shows a desktop create flow implicitly (via the "Create Task" button) and an explicit **mobile** full-screen-sheet frame. A real Sheet primitive was later built for mobile navigation (see "Round 2" below) — Create Task was left as a Dialog rather than retrofitted, since a centered dialog is still fully usable at 390px and the marginal fidelity gain wasn't worth touching a working, tested flow without a concrete reason.
 
-**Mobile navigation is a centered Dialog listing nav links, not a slide-out drawer.**
-- Same reasoning as above: the reference shows a left-edge slide-out sheet; a from-scratch Sheet primitive wasn't worth building for a single menu. The Dialog approach is fully keyboard/screen-reader accessible via Radix and functionally equivalent (open menu → pick a destination → menu closes).
+**Dashboard stats moved from 4 lightweight `GET /tasks?limit=1` calls to a dedicated `GET /tasks/stats/summary` endpoint.**
+- The original build reused the list endpoint's pagination metadata to avoid a new endpoint for four numbers. Once the dashboard needed derived metrics that aren't a simple count (a week-over-week trend, "due this week", "assigned to you") — see "Round 2" — a single aggregation endpoint became the simpler option rather than bolting date-range query params onto the general-purpose list endpoint.
 
-**Mobile task tables scroll horizontally instead of reflowing into stacked cards.**
-- The reference's responsive frame shows table rows becoming cards on mobile. Given the 6–10hr budget, a second card-layout renderer for the same data was deprioritized behind getting every §5 requirement working end-to-end first; the existing table is still fully usable via horizontal scroll at 390px.
+## Round 2 — features added beyond §5 requirements
 
-**"Forgot password," Settings profile editing, Team → "Invite Member," and comment @mentions render but aren't functional.**
-- All four appear in the reference design but none are in §5's requirements. Rather than omit them (and diverge visually from the reference) or fully build them (auth reset flow, invite emails, mention autocomplete — real features, not quick additions), they're present in the UI and surface an honest "not available in this demo" toast/note when interacted with. This was a deliberate call to prioritize visual fidelity to the reference without silently overbuilding beyond §5.
+After the core assessment (§5, fully covered above and tested) was complete, the following were added at the user's request to more closely match the reference design's full feature set. These go beyond what §5 asks for; each is still documented per the same assumption → implement → document rule.
 
-**Dashboard stats are computed via 4 lightweight `GET /tasks?limit=1&status=X` calls (reading `meta.total`) rather than a dedicated `/stats` endpoint.**
-- A real product would add an aggregation endpoint. For this scope, reusing the existing list endpoint's pagination metadata avoids adding a new backend endpoint + Mongo aggregation pipeline for four numbers, at the cost of 4 small parallel requests on dashboard load — an acceptable tradeoff at this data volume, called out here rather than hidden.
+**Activity log.** A new `ActivityLog` collection (task, actor, action, meta, createdAt) is written to on task creation and on any *genuine* change to status/priority/assignee/due-date during an edit (a no-op edit — e.g. resaving the same status — writes nothing). Rendered read-only in the task detail right rail, matching the reference's "Sarah moved this to In Progress" feed. Comment activity isn't logged separately since comments already have their own visible thread.
 
-## What was cut, and why
+**Invite Member and Forgot Password share one token mechanism.** Both end in "let this person set a password via a link"; rather than building two separate token systems, a single `credentialTokenHash`/`credentialTokenExpires`/`credentialTokenPurpose` (`invite`|`reset`) set of fields on `User`, and one `POST /auth/set-password` endpoint, serve both. An invited user is created with `status:'invited'` and an unusable random password until they complete the flow (matching the reference's Active/Invited badge); a forgotten-password token instead targets an existing active account. Only a token's **hash** is ever persisted — the raw token exists only in memory for the one response that returns it.
 
-Everything below appears in the reference design's frames but is genuinely absent from this build (not stubbed):
+**No real email service — reset/invite links are shown directly instead of emailed.** There's no SMTP/email provider wired up (out of scope for a takehome). So: outside `NODE_ENV=production`, `forgot-password` returns the reset link directly in the response body for the demo to be usable end-to-end; `invite` always returns the invite link in its response (there's no non-demo path for it regardless of environment, since there's no admin-only "check your email" alternative to fall back to). In a real deployment both would be emailed and neither returned via the API.
 
-- **Activity/audit log** (the right-rail "Sarah moved this to In Progress" feed). Would need an `ActivityLog` collection + writes on every mutation path (status change, priority change, assignment, comment) — real scope, not a quick add, and not in §5.
-- **Notifications** (the bell icon is present but not wired to anything).
-- **Real-time updates** — no websockets; the app relies on refetch-on-navigation.
+**Forgot-password always returns an identical response, regardless of whether the email exists.** A naive first pass generated the reset token only when a matching user existed but always sent back the same *response body* — which still leaks account existence through a timing side-channel (the "user exists" branch does an extra database write before responding). Caught in review and fixed: both branches now perform exactly one `findOneAndUpdate` attempt, so the code path — and its timing — no longer depends on whether the email matches.
 
-If more time were available, activity logging would be the first addition (it's the highest-value gap relative to effort — one write path, reused across several mutation points).
+**Password-token consumption is atomic.** An early version looked up the user by token, then separately saved the cleared token fields — a narrow window where two requests racing the same still-valid token could both pass the lookup before either write landed, double-spending a token meant to be single-use. Fixed to a single atomic `findOneAndUpdate` that looks up and consumes the token in one database operation.
+
+**Comment @mentions are cosmetic only — no notifications.** Typing `@` autocompletes a teammate's name and highlights it once posted, matching the reference visually. It does not notify the mentioned person or persist mentions as structured data; that would need the notification infrastructure explicitly deferred below.
+
+**Mobile navigation now uses a real slide-out Sheet; mobile task lists now render as cards.** Both were originally simplified (a centered dialog, a horizontally-scrolling table) to prioritize getting every §5 requirement working first. Built properly in this round: a Sheet primitive (Radix Dialog content repositioned to a left-edge slide-in panel) for navigation, and a card-per-task layout (title, badges, assignee, updated-at) shown below the `md` breakpoint alongside the existing table.
+
+**Still not built — deliberately.**
+- **Real-time updates / websockets.** No functional requirement drives this for a small-team tool; the app relies on refetch after mutations and on navigation. Building a websocket layer for an assessment app with no multi-user-concurrent-viewing requirement would be scope for its own sake.
+- **Notification delivery** (the bell icon, mention notifications). Would sit on top of real-time updates or a polling/email layer — same reasoning as above.
+- **Settings beyond name.** Email and role are intentionally not user-editable from Settings (email is the login identity; role is an admin-controlled permission, not a self-service preference).
