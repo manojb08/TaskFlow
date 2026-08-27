@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { Menu, LayoutGrid, ListChecks, UserCircle2, Users, Settings } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 
 const MOBILE_NAV = [
@@ -43,9 +43,14 @@ export function AppShell({
         <main className="flex-1 px-6 py-8 md:px-10 md:py-10">{children}</main>
       </div>
 
-      <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <DialogContent className="max-w-xs p-4">
-          <DialogTitle className="mb-2 px-1">TaskFlow</DialogTitle>
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <div className="flex h-6 w-6 items-center justify-center rounded-[6px] bg-ink text-xs font-bold text-white">
+              T
+            </div>
+            <SheetTitle>TaskFlow</SheetTitle>
+          </SheetHeader>
           <nav className="flex flex-col gap-0.5">
             {MOBILE_NAV.map((item) => (
               <NavLink
@@ -64,8 +69,8 @@ export function AppShell({
               </NavLink>
             ))}
           </nav>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

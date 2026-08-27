@@ -88,62 +88,108 @@ export function TaskTable({
     )
   }
 
+  function TaskActionsMenu({ task }: { task: Task }) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Task actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onSelect={() => navigate(`/tasks/${task._id}?edit=1`)}>Edit task</DropdownMenuItem>
+          <DropdownMenuItem destructive onSelect={() => onDeleteRequest(task)}>
+            Delete task
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          {COLUMNS.map((c) => (
-            <TableHead key={c}>{c}</TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+    <>
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {COLUMNS.map((c) => (
+                <TableHead key={c}>{c}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tasks.map((task) => (
+              <TableRow key={task._id} className="cursor-pointer" onClick={() => navigate(`/tasks/${task._id}`)}>
+                <TableCell>
+                  <p className="font-medium text-ink">{task.title}</p>
+                  <p className="text-xs text-ink/40">TF-{task._id.slice(-4).toUpperCase()}</p>
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={task.status} />
+                </TableCell>
+                <TableCell>
+                  <PriorityBadge priority={task.priority} />
+                </TableCell>
+                <TableCell>
+                  {task.assignee ? (
+                    <div className="flex items-center gap-2">
+                      <UserAvatar user={task.assignee} className="h-6 w-6" />
+                      <span className="text-sm text-ink/80">{task.assignee.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm text-ink/30">Unassigned</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm text-ink/50">{format(new Date(task.createdAt), 'MMM d')}</TableCell>
+                <TableCell className="text-sm text-ink/50">
+                  {formatDistanceToNowStrict(new Date(task.updatedAt), { addSuffix: true })}
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <TaskActionsMenu task={task} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className="flex flex-col gap-3 md:hidden">
         {tasks.map((task) => (
-          <TableRow key={task._id} className="cursor-pointer" onClick={() => navigate(`/tasks/${task._id}`)}>
-            <TableCell>
-              <p className="font-medium text-ink">{task.title}</p>
-              <p className="text-xs text-ink/40">TF-{task._id.slice(-4).toUpperCase()}</p>
-            </TableCell>
-            <TableCell>
+          <div
+            key={task._id}
+            role="link"
+            tabIndex={0}
+            onClick={() => navigate(`/tasks/${task._id}`)}
+            onKeyDown={(e) => e.key === 'Enter' && navigate(`/tasks/${task._id}`)}
+            className="cursor-pointer rounded-[8px] border border-border bg-white p-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-medium text-ink">{task.title}</p>
+                <p className="text-xs text-ink/40">TF-{task._id.slice(-4).toUpperCase()}</p>
+              </div>
+              <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                <TaskActionsMenu task={task} />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <StatusBadge status={task.status} />
-            </TableCell>
-            <TableCell>
               <PriorityBadge priority={task.priority} />
-            </TableCell>
-            <TableCell>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm text-ink/50">
               {task.assignee ? (
                 <div className="flex items-center gap-2">
                   <UserAvatar user={task.assignee} className="h-6 w-6" />
-                  <span className="text-sm text-ink/80">{task.assignee.name}</span>
+                  <span className="text-ink/80">{task.assignee.name}</span>
                 </div>
               ) : (
-                <span className="text-sm text-ink/30">Unassigned</span>
+                <span className="text-ink/30">Unassigned</span>
               )}
-            </TableCell>
-            <TableCell className="text-sm text-ink/50">{format(new Date(task.createdAt), 'MMM d')}</TableCell>
-            <TableCell className="text-sm text-ink/50">
-              {formatDistanceToNowStrict(new Date(task.updatedAt), { addSuffix: true })}
-            </TableCell>
-            <TableCell onClick={(e) => e.stopPropagation()}>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="Task actions">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onSelect={() => navigate(`/tasks/${task._id}?edit=1`)}>
-                    Edit task
-                  </DropdownMenuItem>
-                  <DropdownMenuItem destructive onSelect={() => onDeleteRequest(task)}>
-                    Delete task
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TableCell>
-          </TableRow>
+              <span>{formatDistanceToNowStrict(new Date(task.updatedAt), { addSuffix: true })}</span>
+            </div>
+          </div>
         ))}
-      </TableBody>
-    </Table>
+      </div>
+    </>
   )
 }
