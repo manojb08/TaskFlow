@@ -3,6 +3,8 @@ import { connectDB, disconnectDB } from '../config/db';
 import { User } from '../models/User';
 import { Task } from '../models/Task';
 import { Comment } from '../models/Comment';
+import { ActivityLog } from '../models/ActivityLog';
+import { logActivity } from './logActivity';
 
 const SEED_USERS = [
   { name: 'Alex Morgan', email: 'alex@taskflow.io', password: 'password123', role: 'admin' as const },
@@ -12,7 +14,7 @@ const SEED_USERS = [
 async function seed() {
   await connectDB();
 
-  await Promise.all([User.deleteMany({}), Task.deleteMany({}), Comment.deleteMany({})]);
+  await Promise.all([User.deleteMany({}), Task.deleteMany({}), Comment.deleteMany({}), ActivityLog.deleteMany({})]);
 
   const users = await Promise.all(
     SEED_USERS.map(async (u) =>
@@ -29,6 +31,20 @@ async function seed() {
     priority: 'urgent',
     assignee: sarah._id,
     creator: alex._id,
+  });
+
+  await logActivity({ task: task._id, actor: alex._id, action: 'created' });
+  await logActivity({
+    task: task._id,
+    actor: alex._id,
+    action: 'assignee_changed',
+    meta: { from: null, to: sarah.name },
+  });
+  await logActivity({
+    task: task._id,
+    actor: sarah._id,
+    action: 'status_changed',
+    meta: { from: 'todo', to: 'in_progress' },
   });
 
   await Comment.create({

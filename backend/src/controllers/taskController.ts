@@ -1,8 +1,10 @@
 import { FilterQuery } from 'mongoose';
 import { Task, ITask } from '../models/Task';
 import { Comment } from '../models/Comment';
+import { User } from '../models/User';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
+import { logActivity } from '../utils/logActivity';
 import { AuthenticatedRequest } from '../middleware/requireAuth';
 
 export const listTasks = asyncHandler(async (req: AuthenticatedRequest, res) => {
@@ -45,6 +47,7 @@ export const listTasks = asyncHandler(async (req: AuthenticatedRequest, res) => 
 
 export const createTask = asyncHandler(async (req: AuthenticatedRequest, res) => {
   const task = await Task.create({ ...req.body, creator: req.user!.id });
+  await logActivity({ task: task._id, actor: req.user!.id, action: 'created' });
   const populated = await task.populate([
     { path: 'assignee', select: 'name email' },
     { path: 'creator', select: 'name email' },
@@ -62,16 +65,75 @@ export const getTask = asyncHandler(async (req, res) => {
   res.json({ success: true, data: { task } });
 });
 
-export const updateTask = asyncHandler(async (req, res) => {
+export const updateTask = asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const existing = await Task.findById(req.params.id);
+
   const task = await Task.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   })
     .populate('assignee', 'name email')
     .populate('creator', 'name email');
-  if (!task) {
+  if (!task || !existing) {
     throw ApiError.notFound('Task not found');
   }
+
+  const actor = req.user!.id;
+  const body = req.body as Partial<{
+    status: string;
+    priority: string;
+    assignee: string | null;
+    dueDate: Date | null;
+  }>;
+
+  if ('status' in body && body.status !== existing.status) {
+    await logActivity({
+      task: task._id,
+      actor,
+      action: 'status_changed',
+      meta: { from: existing.status, to: body.status },
+    });
+  }
+
+  if ('priority' in body && body.priority !== existing.priority) {
+    await logActivity({
+      task: task._id,
+      actor,
+      action: 'priority_changed',
+      meta: { from: existing.priority, to: body.priority },
+    });
+  }
+
+  if ('assignee' in body) {
+    const oldAssigneeId = existing.assignee ? existing.assignee.toString() : null;
+    const newAssigneeId = body.assignee ?? null;
+    if (oldAssigneeId !== newAssigneeId) {
+      const [oldAssigneeUser, newAssigneeUser] = await Promise.all([
+        oldAssigneeId ? User.findById(oldAssigneeId).select('name') : null,
+        newAssigneeId ? User.findById(newAssigneeId).select('name') : null,
+      ]);
+      await logActivity({
+        task: task._id,
+        actor,
+        action: 'assignee_changed',
+        meta: { from: oldAssigneeUser?.name ?? null, to: newAssigneeUser?.name ?? null },
+      });
+    }
+  }
+
+  if ('dueDate' in body) {
+    const oldDueDate = existing.dueDate ? existing.dueDate.toISOString() : null;
+    const newDueDate = body.dueDate ? new Date(body.dueDate).toISOString() : null;
+    if (oldDueDate !== newDueDate) {
+      await logActivity({
+        task: task._id,
+        actor,
+        action: 'due_date_changed',
+        meta: { from: oldDueDate, to: newDueDate },
+      });
+    }
+  }
+
   res.json({ success: true, data: { task } });
 });
 
@@ -82,4 +144,42 @@ export const deleteTask = asyncHandler(async (req, res) => {
   }
   await Comment.deleteMany({ task: task._id });
   res.json({ success: true, data: { deleted: true } });
+});
+
+export const getTaskStats = asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const now = new Date();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = new Date(now.getTime() - 7 * oneDayMs);
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * oneDayMs);
+  const sevenDaysFromNow = new Date(now.getTime() + 7 * oneDayMs);
+
+  const [
+    total,
+    todo,
+    inProgress,
+    done,
+    createdLast7Days,
+    createdPrev7Days,
+    completedThisWeek,
+    dueThisWeek,
+    assignedToMeTodoCount,
+  ] = await Promise.all([
+    Task.countDocuments({}),
+    Task.countDocuments({ status: 'todo' }),
+    Task.countDocuments({ status: 'in_progress' }),
+    Task.countDocuments({ status: 'done' }),
+    Task.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
+    Task.countDocuments({ createdAt: { $gte: fourteenDaysAgo, $lt: sevenDaysAgo } }),
+    Task.countDocuments({ status: 'done', updatedAt: { $gte: sevenDaysAgo } }),
+    Task.countDocuments({ dueDate: { $gte: now, $lte: sevenDaysFromNow }, status: { $ne: 'done' } }),
+    Task.countDocuments({ assignee: req.user!.id, status: 'todo' }),
+  ]);
+
+  const totalTrendPct =
+    createdPrev7Days === 0 ? null : Math.round(((createdLast7Days - createdPrev7Days) / createdPrev7Days) * 100);
+
+  res.json({
+    success: true,
+    data: { total, todo, inProgress, done, totalTrendPct, completedThisWeek, dueThisWeek, assignedToMeTodoCount },
+  });
 });
