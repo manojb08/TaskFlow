@@ -1,5 +1,6 @@
 import { formatDistanceToNowStrict } from 'date-fns'
 import { MoreHorizontal } from 'lucide-react'
+import { Fragment, useMemo } from 'react'
 import { UserAvatar } from '@/components/common/UserAvatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -9,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/context/AuthContext'
+import { useUsers } from '@/hooks/useUsers'
 import type { Comment } from '@/types'
 
 interface CommentListProps {
@@ -17,8 +19,35 @@ interface CommentListProps {
   onDelete: (commentId: string) => void
 }
 
+interface BodySegment {
+  text: string
+  isMention: boolean
+}
+
+function splitMentions(body: string, sortedNames: string[]): BodySegment[] {
+  if (sortedNames.length === 0) return [{ text: body, isMention: false }]
+  const pattern = sortedNames.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const regex = new RegExp(`@(?:${pattern})`, 'g')
+  const segments: BodySegment[] = []
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(body))) {
+    if (match.index > lastIndex) segments.push({ text: body.slice(lastIndex, match.index), isMention: false })
+    segments.push({ text: match[0], isMention: true })
+    lastIndex = regex.lastIndex
+  }
+  if (lastIndex < body.length) segments.push({ text: body.slice(lastIndex), isMention: false })
+  return segments
+}
+
 export function CommentList({ comments, isLoading, onDelete }: CommentListProps) {
   const { user } = useAuth()
+  const { users } = useUsers()
+
+  const sortedNames = useMemo(
+    () => [...new Set(users.map((u) => u.name))].sort((a, b) => b.length - a.length),
+    [users],
+  )
 
   if (isLoading) {
     return (
@@ -44,6 +73,7 @@ export function CommentList({ comments, isLoading, onDelete }: CommentListProps)
     <div className="flex flex-col divide-y divide-border">
       {comments.map((comment) => {
         const canDelete = user?._id === comment.author._id || user?.role === 'admin'
+        const segments = splitMentions(comment.body, sortedNames)
         return (
           <div key={comment._id} className="flex gap-3 py-4 first:pt-0">
             <UserAvatar user={comment.author} />
@@ -68,7 +98,17 @@ export function CommentList({ comments, isLoading, onDelete }: CommentListProps)
                   </DropdownMenu>
                 )}
               </div>
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink/80">{comment.body}</p>
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink/80">
+                {segments.map((segment, i) =>
+                  segment.isMention ? (
+                    <span key={i} className="font-medium text-accent">
+                      {segment.text}
+                    </span>
+                  ) : (
+                    <Fragment key={i}>{segment.text}</Fragment>
+                  ),
+                )}
+              </p>
             </div>
           </div>
         )
